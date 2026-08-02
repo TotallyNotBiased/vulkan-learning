@@ -1,0 +1,12 @@
+/target
+
+**/*.rs.bk
+rustc-ice-*.txt
+
+result
+result-*
+
+.nixos-test-history
+
+.direnv/
+.envrc
