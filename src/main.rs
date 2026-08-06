@@ -1,9 +1,9 @@
+#![allow(unused)]
 use std::sync::Arc;
 
 use vulkano::VulkanLibrary;
 use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo};
-use vulkano::device::QueueFlags;
-use vulkano::device::{Device, DeviceCreateInfo, QueueCreateInfo};
+use vulkano::device::{Device, DeviceCreateInfo, QueueFlags, QueueCreateInfo};
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferReadGuard, BufferUsage};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
@@ -60,13 +60,14 @@ fn main() {
     .expect("Failed to create device");
 
     let queue = queues.next().unwrap();
-    let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
+    let memory_allocator = Arc::new(
+        StandardMemoryAllocator::new_default(device.clone())
+        );
 
     // Now we have a virtual device, a queue, and a memory allocator. Let's make a buffer.
     
     let iter = (0..128).map(|_| 5u8); // an iterator that resolves
-                                                                      // to a buffer of value 5 in u8s
-                                                                      // 128 times
+                                      // to a buffer of value 5 in u8s 128 times
     let buffer = Buffer::from_iter( // resolve to buffer
         memory_allocator.clone(),
         BufferCreateInfo {
