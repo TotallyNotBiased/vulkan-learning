@@ -8,6 +8,15 @@ use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferReadGuard,
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
 
+use vulkano::command_buffer::{
+    AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo,
+};
+use vulkano::command_buffer::allocator::{
+    StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
+};
+
+use vulkano::sync::{self, GpuFuture};
+
 // #[derive(BufferContents)]
 // #[repr(C)]
 // struct MyStruct {
@@ -66,32 +75,103 @@ fn main() {
 
     // Now we have a virtual device, a queue, and a memory allocator. Let's make a buffer.
     
-    let iter = (0..128).map(|_| 5u8); // an iterator that resolves
-                                      // to a buffer of value 5 in u8s 128 times
-    let buffer = Buffer::from_iter( // resolve to buffer
+    // let iter = (0..128).map(|_| 5u8); // an iterator that resolves
+    //                                   // to a buffer of value 5 in u8s 128 times
+    // let buffer = Buffer::from_iter( // resolve to buffer
+    //     memory_allocator.clone(),
+    //     BufferCreateInfo {
+    //         usage: BufferUsage::UNIFORM_BUFFER,
+    //         ..Default::default()
+    //     },
+    //     AllocationCreateInfo {
+    //         memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+    //             | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+    //         ..Default::default()
+    //     },
+    //     iter,
+    // )
+    // .unwrap();
+    //
+    // {
+    //     let mut content = buffer.write().unwrap();
+    //     content[12] = 83;
+    //     content[7] = 3;
+    // } // lifetimes c:
+    //
+    // let guard = buffer.read().unwrap();
+    // let inner_ref: &[u8] = &*guard;
+    //
+    // println!("Thingy: {:?}", inner_ref);
+    //
+
+    let source_content = 0..64;
+    
+    let source = Buffer::from_iter( // resolve to buffer
         memory_allocator.clone(),
         BufferCreateInfo {
-            usage: BufferUsage::UNIFORM_BUFFER,
+            usage: BufferUsage::TRANSFER_SRC,
             ..Default::default()
         },
         AllocationCreateInfo {
-            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+            memory_type_filter: MemoryTypeFilter::PREFER_HOST
                 | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
             ..Default::default()
         },
-        iter,
+        source_content,
+    )
+    .expect("failed to create source buffer");
+
+    let destination_content = (0..64).map(|_| 0);
+    let destination = Buffer::from_iter( // resolve to buffer
+        memory_allocator.clone(),
+        BufferCreateInfo {
+            usage: BufferUsage::TRANSFER_DST,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                | MemoryTypeFilter::HOST_RANDOM_ACCESS,
+            ..Default::default()
+        },
+        destination_content,
+    )
+    .expect("failed to create destination buffer");
+    
+    let command_buffer_allocator = StandardCommandBufferAllocator::new(
+        device.clone(),
+        StandardCommandBufferAllocatorCreateInfo::default(),
+    );
+
+    let mut builder = AutoCommandBufferBuilder::primary(
+        &command_buffer_allocator, 
+        queue_family_index, 
+        CommandBufferUsage::OneTimeSubmit,
     )
     .unwrap();
 
-    {
-        let mut content = buffer.write().unwrap();
-        content[12] = 83;
-        content[7] = 3;
-    } // lifetimes c:
+    builder
+        .copy_buffer(CopyBufferInfo::buffers(source.clone(), destination.clone()))
+        .unwrap();
 
-    let guard = buffer.read().unwrap();
-    let inner_ref: &[u8] = &*guard;
+    let command_buffer = builder.build().unwrap();
 
-    println!("Thingy: {:?}", inner_ref);
+    let future = sync::now(device.clone())
+        .then_execute(queue.clone(), command_buffer)
+        .unwrap()
+        .then_signal_fence_and_flush()
+        .unwrap();
+
+    future.wait(None).unwrap();
+
+    let src_content = source.read().unwrap();
+    let destination_content = destination.read().unwrap();
+    assert_eq!(&*src_content, &*destination_content);
+
+    println!("Source: {:?}", &*src_content);
+    println!("Dest: {:?}", &*destination_content);
+
+    println!("Success!");
+
+
 
 }
