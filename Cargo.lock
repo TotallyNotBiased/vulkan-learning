@@ -1433,6 +1433,7 @@ dependencies = [
 name = "vulkan-learning"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "image",
  "vulkano",
  "vulkano-shaders",
