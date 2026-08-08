@@ -19,12 +19,14 @@
           rustfmt
           clippy
           rust-analyzer
+          shaderc
 
           vulkan-tools
           vulkan-loader
           vulkan-validation-layers
         ];
         shellHook = "echo 'rust env loaded'";
+        SHADERC_LIB_DIR = "${pkgs.shaderc.lib}/lib";
         LD_LIBRARY_PATH = libPath;
       };
     };
