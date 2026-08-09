@@ -6,15 +6,21 @@ So far, I've just been getting to grips with using Vulkan and Rust together. I'v
 
 You can follow along by pulling the repo. 
 
-```git clone https://github.com/TotallyNotBiased/vulkan-learning.git```
+```bash
+git clone https://github.com/TotallyNotBiased/vulkan-learning.git
+```
 
 If you're not on Nix, inspect `flake.nix` for the libraries you'll need, otherwise just
 
-```nix develop```
+```bash
+nix develop
+```
 
 and
 
-```cargo run --bin zoom_fractal```
+```bash
+cargo run --bin zoom_fractal
+```
 
 to see the latest project, which is a `winit` surface where you can zoom and drag around on the Mandelbrot set. It's entirely done via a compute shader.
 
