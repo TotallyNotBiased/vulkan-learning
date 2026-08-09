@@ -266,7 +266,6 @@ fn main() {
                     return a + b * cos(6.28318 * (c * t + d));
                 }
 
-
                 // mandelbrot set definition is values of C that diverge in f(z) = z^2 + c as we smoothly
                 // iterate on z
                 void main() {
@@ -275,6 +274,7 @@ fn main() {
 
                     dvec2 z = dvec2(0.0, 0.0);
                     float i;
+                    bool escaped = false;
 
                     for (i = 0.0; i < pc.max_iter; i += 1.0) {
                         z = dvec2(
@@ -285,6 +285,7 @@ fn main() {
                             float log_zn = log(float(dot(z, z))) / 2.0;
                             float nu = log(log_zn / log(2.0)) / log(2.0);
                             i = i - nu;
+                            escaped = true;
                             break;
                         }
                     }
@@ -299,7 +300,7 @@ fn main() {
                     );
 
                     vec4 to_write;
-                    if (t >= 0.9999999) {
+                    if (!escaped) {
                         to_write = vec4(0.0, 0.0, 0.0, 1.0);
                     } else {
                         to_write = vec4(1.0 - color, 1.0);
