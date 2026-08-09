@@ -34,6 +34,7 @@ use vulkano::swapchain::Surface;
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, SwapchainPresentInfo};
 use winit::event::ElementState::Pressed;
 use winit::event::MouseButton::Left;
+use winit::event::VirtualKeyCode::R;
 use winit::event_loop::{EventLoop, ControlFlow};
 use winit::event::{Event, MouseScrollDelta, WindowEvent};
 use winit::window::WindowBuilder;
@@ -365,6 +366,18 @@ fn main() {
         } => {
             window_resized = true;
         }
+        Event::WindowEvent {
+            event: WindowEvent::KeyboardInput {
+                input: winit::event::KeyboardInput{ virtual_keycode : Some(winit::event::VirtualKeyCode::R), ..} ,
+                ..
+            },
+            .. 
+        } => {
+            zoom_driver.center = [0.0, 0.0];
+            zoom_driver.zoom = 1.0;
+            zoom_driver.max_iter = 8;
+        }
+        
         Event::WindowEvent { 
             event: WindowEvent::MouseWheel { delta, .. }, .. 
         } => {
@@ -407,13 +420,16 @@ fn main() {
             }
 
             if drag_state.dragging {
-                let dx = (drag_state.start_cursor[0] - position.x as f32)/512.0;
-                let dy = (drag_state.start_cursor[1] - position.y as f32)/512.0;
+                let image_width = 512.0;
+                let scale = (2.0 * f32::exp2(zoom_driver.zoom)) / image_width;
+
+                let dx = (drag_state.start_cursor[0] - position.x as f32)*scale;
+                let dy = (drag_state.start_cursor[1] - position.y as f32)*scale;
                 zoom_driver.center[0] = drag_state.base_center[0] + dx; 
                 zoom_driver.center[1] = drag_state.base_center[1] + dy;             
             }
 
-            println!("Position: x: {}, y: {}, dragging: {}, freeze: {:?}", position.x, position.y, drag_state.dragging, drag_state.start_cursor);
+            println!("Position: x: {}, y: {}, dragging: {}, zoom: {:?}", position.x, position.y, drag_state.dragging, zoom_driver.zoom);
 
         }
         Event::MainEventsCleared => {
