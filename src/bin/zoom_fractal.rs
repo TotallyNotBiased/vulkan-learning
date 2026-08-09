@@ -19,7 +19,7 @@ use vulkano::command_buffer::allocator::{
 use vulkano::sync::{self, GpuFuture};
 
 use vulkano::pipeline::compute::ComputePipelineCreateInfo;
-use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
+use vulkano::pipeline::layout::{PushConstantRange, PipelineDescriptorSetLayoutCreateInfo};
 use vulkano::pipeline::{
     Pipeline,
     ComputePipeline, PipelineLayout, PipelineShaderStageCreateInfo, PipelineBindPoint,
@@ -32,25 +32,25 @@ use vulkano::format::Format;
 use vulkano::swapchain;
 use vulkano::swapchain::Surface;
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, SwapchainPresentInfo};
-use winit::event::ElementState::Pressed;
-use winit::event::MouseButton::Left;
-use winit::event::VirtualKeyCode::R;
 use winit::event_loop::{EventLoop, ControlFlow};
 use winit::event::{Event, MouseScrollDelta, WindowEvent};
 use winit::window::WindowBuilder;
 
+use vulkano::shader::ShaderStages;
+
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct ZoomDriver {
-    pub center: [f32; 2],
-    pub zoom: f32,
-    pub max_iter: u32,
+    pub center: [f64; 2],
+    pub zoom: f64,
+    pub max_iter: f32,
+    pub _packing: u32,
 }
 
 struct DragState {
     dragging: bool,
-    start_cursor: [f32; 2],
-    base_center: [f32; 2],
+    start_cursor: [f64; 2],
+    base_center: [f64; 2],
 }
     
 
@@ -162,6 +162,19 @@ fn main() {
         &device_extensions,
     );
 
+    let capabilities = physical_device.supported_features();
+
+    // make sure that we have fp64 precision in the shader
+    assert!(
+        capabilities.shader_float64,
+        "not supported"
+    );
+
+    let device_features = vulkano::device::Features {
+        shader_float64: true,
+        ..vulkano::device::Features::empty()
+    };
+
     for family in physical_device.queue_family_properties() {
         println!("Found a queue family with {:?} queue(s)", family.queue_count);
     }
@@ -198,6 +211,7 @@ fn main() {
                  ..Default::default()
             }],
             enabled_extensions: device_extensions,
+            enabled_features: device_features,
             ..Default::default()
         },
     )
@@ -243,31 +257,33 @@ fn main() {
                 layout(set = 0, binding = 0, rgba8) uniform writeonly image2D img;
 
                 layout(push_constant) uniform PushConstants {
-                    vec2 center;
-                    float zoom;
-                    uint max_iter;
+                    layout (offset = 0) dvec2 center;
+                    layout (offset = 16) double zoom;
+                    layout (offset = 24) float max_iter;
                 } pc;
 
                 // mandelbrot set definition is values of C that diverge in f(z) = z^2 + c as we smoothly
                 // iterate on z
                 void main() {
-                    vec2 norm_coordinates = (gl_GlobalInvocationID.xy + vec2(0.5)) / vec2(imageSize(img));
-                    vec2 c = pc.center + (norm_coordinates - vec2(0.5)) * (2.0 * exp2(pc.zoom));
+                    dvec2 norm_coordinates = (gl_GlobalInvocationID.xy + dvec2(0.5)) / dvec2(imageSize(img));
+                    dvec2 c = pc.center + (norm_coordinates - dvec2(0.5)) * (2.0 * exp2(float(pc.zoom)));
 
-                    vec2 z = vec2(0.0, 0.0);
+                    dvec2 z = dvec2(0.0, 0.0);
                     float i;
-                    for (i = 0.0; i < 1.0; i += 0.005) {
-                        z = vec2 (
+                    for (i = 0.0; i < pc.max_iter; i += 1.0) {
+                        z = dvec2(
                             z.x * z.x - z.y * z.y + c.x,
-                            z.y * z.x + z.x * z.y + c.y 
+                            z.y * z.x + z.x * z.y + c.y
                         );
-
-                        if (length(z) > 4.0) {
+                        if (dot(vec2(z), vec2(z)) > 16.0) { // bailout radius 4 squared
+                            float log_zn = log(float(dot(z, z))) / 2.0;
+                            float nu = log(log_zn / log(2.0)) / log(2.0);
+                            i = i - nu;
                             break;
                         }
                     }
-
-                    vec4 to_write = vec4(vec3(i), 1.0);
+                    float t = clamp(i / pc.max_iter, 0.0, 1.0);
+                    vec4 to_write = vec4(vec3(t), 1.0);
                     imageStore(img, ivec2(gl_GlobalInvocationID.xy), to_write);
                 }
             ",
@@ -305,13 +321,20 @@ fn main() {
             .into_pipeline_layout_create_info(device.clone())
             .unwrap();
 
-    layout_create_info.push_constant_ranges = stage
-        .entry_point
-        .info()
-        .push_constant_requirements
-        .clone()
-        .into_iter()
-        .collect();
+    // Shader reflection approach
+    // layout_create_info.push_constant_ranges = stage
+    //     .entry_point
+    //     .info()
+    //     .push_constant_requirements
+    //     .clone()
+    //     .into_iter()
+    //     .collect();
+
+    layout_create_info.push_constant_ranges = vec![PushConstantRange {
+        stages: ShaderStages::COMPUTE,
+        offset: 0,
+        size: std::mem::size_of::<ZoomDriver>() as u32, // 32
+    }];
 
     let layout = PipelineLayout::new(
         device.clone(),
@@ -344,7 +367,8 @@ fn main() {
     let mut zoom_driver = ZoomDriver {
         center: [0.0, 0.0],
         zoom: 1.0,
-        max_iter: 8,
+        max_iter: 800.0,
+        _packing: 0,
     };
 
     let mut drag_state = DragState { 
@@ -375,7 +399,7 @@ fn main() {
         } => {
             zoom_driver.center = [0.0, 0.0];
             zoom_driver.zoom = 1.0;
-            zoom_driver.max_iter = 8;
+            zoom_driver.max_iter = 8.0;
         }
         
         Event::WindowEvent { 
@@ -383,7 +407,8 @@ fn main() {
         } => {
             match delta {
                 MouseScrollDelta::LineDelta(_, y) => {
-                    zoom_driver.zoom -= y/10.0;
+                    zoom_driver.zoom -= y as f64/10.0;
+                    zoom_driver.max_iter = 800.0 + zoom_driver.zoom.abs() as f32 * 100.0;
                 }
                 _ => ()
             }
@@ -415,16 +440,16 @@ fn main() {
             ..
         } => {
             if !drag_state.dragging {
-                drag_state.start_cursor = [position.x as f32, position.y as f32];
+                drag_state.start_cursor = [position.x, position.y];
                 drag_state.base_center = zoom_driver.center;
             }
 
             if drag_state.dragging {
                 let image_width = 512.0;
-                let scale = (2.0 * f32::exp2(zoom_driver.zoom)) / image_width;
+                let scale = (2.0 * f64::exp2(zoom_driver.zoom)) / image_width;
 
-                let dx = (drag_state.start_cursor[0] - position.x as f32)*scale;
-                let dy = (drag_state.start_cursor[1] - position.y as f32)*scale;
+                let dx = (drag_state.start_cursor[0] - position.x)*scale;
+                let dy = (drag_state.start_cursor[1] - position.y)*scale;
                 zoom_driver.center[0] = drag_state.base_center[0] + dx; 
                 zoom_driver.center[1] = drag_state.base_center[1] + dy;             
             }
