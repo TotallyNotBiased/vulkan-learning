@@ -27,6 +27,7 @@ to see the latest project, which is a `winit` surface where you can zoom and dra
 ## Images
 
 ### Mandelbrot Set Output
-![black and white image of the mandelbrot set](output/fractal.png)
+<img src="output/fractal.png" width="300" alt="black and white image of the mandelbrot set">
+
 ### Mandelbrot Zoom 
-![video of zooming into mandelbrot set](output/mandelbrot-only.gif)
+<img src="output/mandelbrot-only.gif" width="300" alt="video of zooming into mandelbrot set">
