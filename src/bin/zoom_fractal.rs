@@ -262,6 +262,11 @@ fn main() {
                     layout (offset = 24) float max_iter;
                 } pc;
 
+                vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
+                    return a + b * cos(6.28318 * (c * t + d));
+                }
+
+
                 // mandelbrot set definition is values of C that diverge in f(z) = z^2 + c as we smoothly
                 // iterate on z
                 void main() {
@@ -270,6 +275,7 @@ fn main() {
 
                     dvec2 z = dvec2(0.0, 0.0);
                     float i;
+
                     for (i = 0.0; i < pc.max_iter; i += 1.0) {
                         z = dvec2(
                             z.x * z.x - z.y * z.y + c.x,
@@ -283,7 +289,21 @@ fn main() {
                         }
                     }
                     float t = clamp(i / pc.max_iter, 0.0, 1.0);
-                    vec4 to_write = vec4(vec3(t), 1.0);
+
+                    // colouring the fractal 
+                    vec3 color = palette(i / float(pc.max_iter),
+                        vec3(0.5, 0.5, 0.5),
+                        vec3(0.5, 0.5, 0.5),
+                        vec3(1.0, 1.0, 1.0),
+                        vec3(0.00, 0.10, 0.20)
+                    );
+
+                    vec4 to_write;
+                    if (t >= 0.9999999) {
+                        to_write = vec4(0.0, 0.0, 0.0, 1.0);
+                    } else {
+                        to_write = vec4(1.0 - color, 1.0);
+                    }
                     imageStore(img, ivec2(gl_GlobalInvocationID.xy), to_write);
                 }
             ",
