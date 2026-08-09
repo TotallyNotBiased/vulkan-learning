@@ -32,17 +32,26 @@ use vulkano::format::Format;
 use vulkano::swapchain;
 use vulkano::swapchain::Surface;
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, SwapchainPresentInfo};
+use winit::event::ElementState::Pressed;
+use winit::event::MouseButton::Left;
 use winit::event_loop::{EventLoop, ControlFlow};
-use winit::event::{Event, WindowEvent};
+use winit::event::{Event, MouseScrollDelta, WindowEvent};
 use winit::window::WindowBuilder;
 
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
-pub struct PushConstants {
+pub struct ZoomDriver {
     pub center: [f32; 2],
     pub zoom: f32,
     pub max_iter: u32,
 }
+
+struct DragState {
+    dragging: bool,
+    start_cursor: [f32; 2],
+    base_center: [f32; 2],
+}
+    
 
 fn select_physical_device( // boilerplate from vulkano.rs
     instance: &Arc<Instance>,
@@ -242,7 +251,7 @@ fn main() {
                 // iterate on z
                 void main() {
                     vec2 norm_coordinates = (gl_GlobalInvocationID.xy + vec2(0.5)) / vec2(imageSize(img));
-                    vec2 c = (norm_coordinates - vec2(0.5)) * 2.0 - vec2(1.0, 0.0);
+                    vec2 c = pc.center + (norm_coordinates - vec2(0.5)) * (2.0 * exp2(pc.zoom));
 
                     vec2 z = vec2(0.0, 0.0);
                     float i;
@@ -287,11 +296,25 @@ fn main() {
 
     let cs = shader.entry_point("main").unwrap();
     let stage = PipelineShaderStageCreateInfo::new(cs);
-    let layout = PipelineLayout::new(
-        device.clone(),
+
+    // here we insert push constants into the layout creation info
+
+    let mut layout_create_info = 
         PipelineDescriptorSetLayoutCreateInfo::from_stages([&stage])
             .into_pipeline_layout_create_info(device.clone())
-            .unwrap(),
+            .unwrap();
+
+    layout_create_info.push_constant_ranges = stage
+        .entry_point
+        .info()
+        .push_constant_requirements
+        .clone()
+        .into_iter()
+        .collect();
+
+    let layout = PipelineLayout::new(
+        device.clone(),
+        layout_create_info,
     )
     .unwrap();
 
@@ -317,6 +340,17 @@ fn main() {
 
     let mut window_resized = false;
     let mut recreate_swapchain = false;
+    let mut zoom_driver = ZoomDriver {
+        center: [0.0, 0.0],
+        zoom: 1.0,
+        max_iter: 8,
+    };
+
+    let mut drag_state = DragState { 
+        dragging: false, 
+        start_cursor: [0.0, 0.0],
+        base_center: [0.0, 0.0],
+    };
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -330,6 +364,57 @@ fn main() {
             ..
         } => {
             window_resized = true;
+        }
+        Event::WindowEvent { 
+            event: WindowEvent::MouseWheel { delta, .. }, .. 
+        } => {
+            match delta {
+                MouseScrollDelta::LineDelta(_, y) => {
+                    zoom_driver.zoom -= y/10.0;
+                }
+                _ => ()
+            }
+        }
+        Event::WindowEvent { 
+            event: WindowEvent::MouseInput { 
+                button: winit::event::MouseButton::Left, 
+                state: winit::event::ElementState::Pressed,
+                ..
+            }, 
+            .. 
+        } => {
+            drag_state.dragging = true;
+        }
+        Event::WindowEvent { 
+            event: WindowEvent::MouseInput { 
+                button: winit::event::MouseButton::Left, 
+                state: winit::event::ElementState::Released,
+                ..
+            }, 
+            .. 
+        } => {
+            drag_state.dragging = false;
+        }
+        Event::WindowEvent { 
+            event: WindowEvent::CursorMoved { 
+                position, ..
+            }, 
+            ..
+        } => {
+            if !drag_state.dragging {
+                drag_state.start_cursor = [position.x as f32, position.y as f32];
+                drag_state.base_center = zoom_driver.center;
+            }
+
+            if drag_state.dragging {
+                let dx = (drag_state.start_cursor[0] - position.x as f32)/512.0;
+                let dy = (drag_state.start_cursor[1] - position.y as f32)/512.0;
+                zoom_driver.center[0] = drag_state.base_center[0] + dx; 
+                zoom_driver.center[1] = drag_state.base_center[1] + dy;             
+            }
+
+            println!("Position: x: {}, y: {}, dragging: {}, freeze: {:?}", position.x, position.y, drag_state.dragging, drag_state.start_cursor);
+
         }
         Event::MainEventsCleared => {
             if window_resized || recreate_swapchain {
@@ -381,6 +466,8 @@ fn main() {
                     0,
                     set.clone(),
                 )
+                .unwrap()
+                .push_constants(compute_pipeline.layout().clone(), 0, zoom_driver)
                 .unwrap()
                 .dispatch([1024 / 8, 1024 / 8, 1])
                 .unwrap();
