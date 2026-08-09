@@ -373,7 +373,7 @@ fn main() {
     let buffer_content = buf.read().unwrap();
     let resulting_image = ImageBuffer::<Rgba<u8>, _>::from_raw(1024, 1024, &buffer_content[..]).unwrap();
 
-    resulting_image.save("blue_square.png").unwrap();
+    resulting_image.save("output/blue_square.png").unwrap();
 
     println!("Success!!!");
 }
